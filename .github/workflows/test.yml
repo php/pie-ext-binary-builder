@@ -4,31 +4,60 @@ on:
   pull_request:
 
 env:
-  # Note: this tag must exist already, and a draft release (or non-immutable release) must exist with this tag
-  RELEASE_TAG: 0.0.0
+  RELEASE_TAG: 0.0.0-fake+run_${{ github.run_id }}_${{ github.run_attempt }}
 
 jobs:
-  prepare:
+  check-dist-updated:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Rebuild Dist
+        run: npm run build
+
+      - name: Compare Dist
+        run: |
+          if [ -n "$(git status --porcelain dist)" ]; then
+            echo "dist/ is out of date. Please run 'npm run build' and commit the changes."
+            exit 1
+          fi
+
+  create-test-release:
     runs-on: ubuntu-latest
     permissions:
       # contents:write is required to upload to the release assets
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          fetch-tags: 'true'
+          ref: ${{ github.ref }}
 
-      - name: Delete existing assets
+      - name: Create a fake tag for the build
         run: |
-          assets=$(gh release view ${{ env.RELEASE_TAG }} --json assets --template '{{range .assets}}{{.name}}{{"\n"}}{{end}}')
-          for asset in $assets; do
-            gh release delete-asset ${{ env.RELEASE_TAG }} "$asset" -y
-          done
+          git config --global user.email "Fake User"
+          git config --global user.name "fake-user@example.com"
+          git tag -a -m "test tag for CI build ${{ github.run_id }}" ${{ env.RELEASE_TAG }}
+          git push origin ${{ env.RELEASE_TAG }}
+
+      - name: Create a fake release for the build
+        run: gh release create "${{ env.RELEASE_TAG }}" --title "${{ env.RELEASE_TAG }}" --draft --notes-from-tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  test:
+  test-action:
     runs-on: ${{ matrix.operating-system }}
-    needs: [prepare]
+    needs: [create-test-release]
     strategy:
       fail-fast: false
       matrix:
