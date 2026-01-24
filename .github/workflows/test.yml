@@ -124,7 +124,6 @@ jobs:
 
   delete-test-release:
     runs-on: ubuntu-latest
-    if: always()
     needs: [test-action]
     steps:
       - name: Checkout

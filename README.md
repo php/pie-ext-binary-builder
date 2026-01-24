@@ -84,6 +84,7 @@ jobs:
         run: gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --draft --notes-from-tag
 
   add-pie-binaries:
+    needs: [ create-draft-release ]
     runs-on: ${{ matrix.operating-system }}
     # The matrix defines which combination of binaries you want to build
     strategy:
