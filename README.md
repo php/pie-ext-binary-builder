@@ -119,7 +119,7 @@ jobs:
       # the given tag name
       - name: Build and release
         id: php-ext-binary-builder
-        uses: php/pie-ext-binary-builder@0.0.2
+        uses: php/pie-ext-binary-builder@0.0.1
         with:
           release-tag: ${{ github.ref_name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
