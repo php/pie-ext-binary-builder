@@ -1,0 +1,19 @@
+name: 'PIE Pre-Packaged Binary Action'
+description: 'Build and upload a PIE pre-packaged binary with the expected naming conventions.'
+inputs:
+  configure-flags:
+    description: 'Flags to pass to ./configure'
+    required: false
+    default: ''
+  release-tag:
+    description: 'The tag to use for the release'
+    required: true
+  github-token:
+    description: 'The GitHub token to use for uploading assets'
+    required: true
+outputs:
+  package-path:
+    description: 'Path to the generated .tgz package'
+runs:
+  using: 'node20'
+  main: dist/index.js
