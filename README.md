@@ -21,7 +21,7 @@ a release ready for the action to upload the builds to.
 > a draft release, otherwise uploading the assets will fail.
 
 ```yaml
-uses: php/php-ext-binary-builder@0.0.2
+uses: php/pie-ext-binary-builder@0.0.2
 with:
   configure-flags: '--enable-something --enable-other-things'
   release-tag: ${{ github.ref_name }}
