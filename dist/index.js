@@ -30203,6 +30203,228 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 5105:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+const core = __nccwpck_require__(7484);
+const exec = __nccwpck_require__(5236);
+const github = __nccwpck_require__(3228);
+const fs = __nccwpck_require__(9896);
+const path = __nccwpck_require__(6928);
+
+async function determineExtensionNameFromComposerJson() {
+    core.info("Detecting extension name from composer.json...");
+
+    if (!fs.existsSync("composer.json")) {
+        throw new Error("composer.json not found. This does not appear to be a PIE package.");
+    }
+
+    const type = (await exec.getExecOutput("jq", ["-r", ".type", "composer.json"], {
+        ignoreReturnCode: true
+    })).stdout.trim();
+    if (type !== "php-ext" && type !== "php-ext-zend") {
+        throw new Error(`composer.json type must be "php-ext" or "php-ext-zend", but "${type}" was found.`);
+    }
+
+    let extName = (await exec.getExecOutput("jq", ["-r", '."php-ext"."extension-name"', "composer.json"], {
+        ignoreReturnCode: true
+    })).stdout.trim();
+
+    // If extension-name is not defined, fall back according to package name (without vendor prefix)
+    // https://github.com/php/pie/blob/f9cb8d3034697dc5b4054614a25b0860c861e496/src/ExtensionName.php#L58
+    if (extName === "null" || extName === "") {
+        core.info(".php-ext.extension-name not found in composer.json, falling back to package name...");
+        const packageName = (await exec.getExecOutput("jq", ["-r", ".name", "composer.json"], {
+            ignoreReturnCode: true
+        })).stdout.trim();
+
+        if (packageName === "null" || packageName === "") {
+            throw new Error("Could not determine extension name: both .\"php-ext\".\"extension-name\" and .name are missing in composer.json");
+        }
+
+        extName = packageName.split('/').pop();
+    }
+
+    // If the extension is prefixed with "ext-", strip it
+    if (extName.startsWith("ext-")) {
+        extName = extName.substring(4);
+    }
+
+    // Validate according to https://github.com/php/pie/blob/f9cb8d3034697dc5b4054614a25b0860c861e496/src/ExtensionName.php#L33
+    if (!/^[A-Za-z][a-zA-Z0-9_]+$/.test(extName)) {
+        throw new Error(`Invalid extension name: "${extName}" - must be alphanumeric/underscores only.`);
+    }
+
+    return extName;
+}
+
+async function buildExtension() {
+    core.info("Building the extension...");
+    const configureFlags = core.getInput("configure-flags").split(' ');
+
+    await exec.exec("phpize");
+    await exec.exec("./configure", configureFlags);
+    await exec.exec("make");
+}
+
+async function determinePhpVersionFromPhpConfig() {
+    core.info("Detecting php version...");
+    return (await exec.getExecOutput("php-config", ["--version"]))
+            .stdout
+            .trim()
+            .split('.')
+            .slice(0, 2)
+            .join('.');
+}
+
+async function determineArchitecture() {
+    core.info("Detecting architecture...");
+    const arch = process.arch;
+    const map = {
+        'x64': 'x86_64',
+        'arm64': 'arm64',
+        'ia32': 'x86'
+    };
+
+    if (!map[arch]) {
+        throw new Error(`Unsupported architecture: ${arch}`);
+    }
+
+    return map[arch];
+}
+
+async function determineOperatingSystem() {
+    core.info("Detecting operating system...");
+    switch (process.platform) {
+        case "linux":
+        case "darwin":
+            return process.platform;
+        // aix|freebsd|openbsd|sunos|win32 not supported at this time
+        default:
+            throw new Error(`Unsupported operating system: ${process.platform}`);
+    }
+}
+
+async function determineLibcFlavour() {
+    core.info("Detecting libc flavour...");
+    if (process.platform === "darwin") {
+        return "bsdlibc";
+    }
+
+    const lddOutput = (await exec.getExecOutput("ldd", ["--version"], { ignoreReturnCode: true })).stdout;
+    if (lddOutput.includes("musl")) {
+        return "musl";
+    }
+
+    return "glibc";
+}
+
+async function determinePhpBinary() {
+    core.info("Locating PHP binary...");
+    const phpBinary = (await exec.getExecOutput("php-config", ["--php-binary"]))
+        .stdout
+        .trim();
+
+    if (phpBinary === "NONE") {
+        core.warning("php-config --php-binary returned NONE, will just use 'php' which... should work?");
+        return "php";
+    }
+
+    return phpBinary;
+}
+
+async function determinePhpDebugMode(phpBinary) {
+    core.info("Detecting Zend debug mode...");
+    return (await exec.getExecOutput(
+            phpBinary,
+            ["-n", "-r", "echo PHP_DEBUG ? '-debug' : '';"],
+        ))
+        .stdout
+        .trim();
+}
+
+async function determineZendThreadSafeMode(phpBinary) {
+    core.info("Detecting Zend thread safety mode...");
+    return (await exec.getExecOutput(
+            phpBinary,
+            ["-n", "-r", "echo ZEND_THREAD_SAFE ? '-zts' : '';"],
+        ))
+        .stdout
+        .trim();
+}
+
+async function uploadReleaseAsset(releaseTag, packageFilename) {
+    core.info("Uploading release asset...");
+    const githubToken = core.getInput("github-token");
+
+    const octokit = github.getOctokit(githubToken);
+    const { owner, repo } = github.context.repo;
+
+    core.info(`Searching for release with tag: ${releaseTag} (including drafts)...`);
+    const { data: releases } = await octokit.rest.repos.listReleases({
+        owner,
+        repo,
+    });
+
+    const release = releases.find(r => r.tag_name === releaseTag);
+    if (!release) {
+        throw new Error(`No release found for tag: ${releaseTag}`);
+    }
+
+    core.info(`Found release ${release.name || release.tag_name} (ID: ${release.id})`);
+    await octokit.rest.repos.uploadReleaseAsset({
+        owner,
+        repo,
+        release_id: release.id,
+        name: packageFilename,
+        data: fs.readFileSync(path.resolve(packageFilename)),
+    });
+
+    core.info("Asset uploaded successfully!");
+}
+
+module.exports = {
+    determineExtensionNameFromComposerJson,
+    buildExtension,
+    determinePhpVersionFromPhpConfig,
+    determineArchitecture,
+    determineOperatingSystem,
+    determineLibcFlavour,
+    determinePhpBinary,
+    determinePhpDebugMode,
+    determineZendThreadSafeMode,
+    uploadReleaseAsset
+};
+
+if (require.main === require.cache[eval('__filename')]) {
+    (async function () {
+        const releaseTag = core.getInput("release-tag");
+        const phpBinary = await determinePhpBinary();
+        const extName = await determineExtensionNameFromComposerJson();
+        const phpMajorMinor = await determinePhpVersionFromPhpConfig();
+        const arch = await determineArchitecture();
+        const os = await determineOperatingSystem();
+        const libcFlavour = await determineLibcFlavour();
+        const zendDebug = await determinePhpDebugMode(phpBinary);
+        const ztsMode = await determineZendThreadSafeMode(phpBinary);
+        const extSoFile = `${extName}.so`;
+        const extPackageName = `php_${extName}-${releaseTag}_php${phpMajorMinor}-${arch}-${os}-${libcFlavour}${zendDebug}${ztsMode}.zip`;
+
+        await buildExtension();
+
+        await exec.exec("ls", ["-l", "modules"]);
+
+        await exec.exec(`zip -j ${extPackageName} modules/${extSoFile}`);
+
+        await uploadReleaseAsset(releaseTag, extPackageName);
+
+        core.setOutput("package-path", extPackageName);
+    })();
+}
+
+
+/***/ }),
+
 /***/ 2613:
 /***/ ((module) => {
 
@@ -32114,209 +32336,13 @@ module.exports = parseParams
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
 /******/ 	
 /************************************************************************/
-var __webpack_exports__ = {};
-const core = __nccwpck_require__(7484);
-const exec = __nccwpck_require__(5236);
-const github = __nccwpck_require__(3228);
-const fs = __nccwpck_require__(9896);
-const path = __nccwpck_require__(6928);
-
-async function determineExtensionNameFromComposerJson() {
-    core.info("Detecting extension name from composer.json...");
-
-    if (!fs.existsSync("composer.json")) {
-        throw new Error("composer.json not found. This does not appear to be a PIE package.");
-    }
-
-    const type = (await exec.getExecOutput("jq", ["-r", ".type", "composer.json"], {
-        ignoreReturnCode: true
-    })).stdout.trim();
-    if (type !== "php-ext" && type !== "php-ext-zend") {
-        throw new Error(`composer.json type must be "php-ext" or "php-ext-zend", but "${type}" was found.`);
-    }
-
-    let extName = (await exec.getExecOutput("jq", ["-r", '."php-ext"."extension-name"', "composer.json"], {
-        ignoreReturnCode: true
-    })).stdout.trim();
-
-    // If extension-name is not defined, fall back according to package name (without vendor prefix)
-    // https://github.com/php/pie/blob/f9cb8d3034697dc5b4054614a25b0860c861e496/src/ExtensionName.php#L58
-    if (extName === "null" || extName === "") {
-        core.info(".php-ext.extension-name not found in composer.json, falling back to package name...");
-        const packageName = (await exec.getExecOutput("jq", ["-r", ".name", "composer.json"], {
-            ignoreReturnCode: true
-        })).stdout.trim();
-
-        if (packageName === "null" || packageName === "") {
-            throw new Error("Could not determine extension name: both .\"php-ext\".\"extension-name\" and .name are missing in composer.json");
-        }
-
-        extName = packageName.split('/').pop();
-    }
-
-    // If the extension is prefixed with "ext-", strip it
-    if (extName.startsWith("ext-")) {
-        extName = extName.substring(4);
-    }
-
-    // Validate according to https://github.com/php/pie/blob/f9cb8d3034697dc5b4054614a25b0860c861e496/src/ExtensionName.php#L33
-    if (!/^[A-Za-z][a-zA-Z0-9_]+$/.test(extName)) {
-        throw new Error(`Invalid extension name: "${extName}" - must be alphanumeric/underscores only.`);
-    }
-
-    return extName;
-}
-
-async function buildExtension() {
-    core.info("Building the extension...");
-    const configureFlags = core.getInput("configure-flags").split(' ');
-
-    await exec.exec("phpize");
-    await exec.exec("./configure", configureFlags);
-    await exec.exec("make");
-}
-
-async function determinePhpVersionFromPhpConfig() {
-    core.info("Detecting php version...");
-    return (await exec.getExecOutput("php-config", ["--version"]))
-            .stdout
-            .trim()
-            .split('.')
-            .slice(0, 2)
-            .join('.');
-}
-
-async function determineArchitecture() {
-    core.info("Detecting architecture...");
-    const arch = process.arch;
-    const map = {
-        'x64': 'x86_64',
-        'arm64': 'arm64',
-        'ia32': 'x86'
-    };
-
-    if (!map[arch]) {
-        throw new Error(`Unsupported architecture: ${arch}`);
-    }
-
-    return map[arch];
-}
-
-async function determineOperatingSystem() {
-    core.info("Detecting operating system...");
-    switch (process.platform) {
-        case "linux":
-        case "darwin":
-            return process.platform;
-        // aix|freebsd|openbsd|sunos|win32 not supported at this time
-        default:
-            throw new Error(`Unsupported operating system: ${process.platform}`);
-    }
-}
-
-async function determineLibcFlavour() {
-    core.info("Detecting libc flavour...");
-    if (process.platform === "darwin") {
-        return "bsdlibc";
-    }
-
-    const lddOutput = (await exec.getExecOutput("ldd", ["--version"], { ignoreReturnCode: true })).stdout;
-    if (lddOutput.includes("musl")) {
-        return "musl";
-    }
-
-    return "glibc";
-}
-
-async function determinePhpBinary() {
-    core.info("Locating PHP binary...");
-    const phpBinary = (await exec.getExecOutput("php-config", ["--php-binary"]))
-        .stdout
-        .trim();
-
-    if (phpBinary === "NONE") {
-        core.warning("php-config --php-binary returned NONE, will just use 'php' which... should work?");
-        return "php";
-    }
-
-    return phpBinary;
-}
-
-async function determinePhpDebugMode(phpBinary) {
-    core.info("Detecting Zend debug mode...");
-    return (await exec.getExecOutput(
-            phpBinary,
-            ["-n", "-r", "echo PHP_DEBUG ? '-debug' : '';"],
-        ))
-        .stdout
-        .trim();
-}
-
-async function determineZendThreadSafeMode(phpBinary) {
-    core.info("Detecting Zend thread safety mode...");
-    return (await exec.getExecOutput(
-            phpBinary,
-            ["-n", "-r", "echo ZEND_THREAD_SAFE ? '-zts' : '';"],
-        ))
-        .stdout
-        .trim();
-}
-
-async function uploadReleaseAsset(releaseTag, packageFilename) {
-    core.info("Uploading release asset...");
-    const githubToken = core.getInput("github-token");
-
-    const octokit = github.getOctokit(githubToken);
-    const { owner, repo } = github.context.repo;
-
-    core.info(`Searching for release with tag: ${releaseTag} (including drafts)...`);
-    const { data: releases } = await octokit.rest.repos.listReleases({
-        owner,
-        repo,
-    });
-
-    const release = releases.find(r => r.tag_name === releaseTag);
-    if (!release) {
-        throw new Error(`No release found for tag: ${releaseTag}`);
-    }
-
-    core.info(`Found release ${release.name || release.tag_name} (ID: ${release.id})`);
-    await octokit.rest.repos.uploadReleaseAsset({
-        owner,
-        repo,
-        release_id: release.id,
-        name: packageFilename,
-        data: fs.readFileSync(path.resolve(packageFilename)),
-    });
-
-    core.info("Asset uploaded successfully!");
-}
-
-(async function () {
-    const releaseTag = core.getInput("release-tag");
-    const phpBinary = await determinePhpBinary();
-    const extName = await determineExtensionNameFromComposerJson();
-    const phpMajorMinor = await determinePhpVersionFromPhpConfig();
-    const arch = await determineArchitecture();
-    const os = await determineOperatingSystem();
-    const libcFlavour = await determineLibcFlavour();
-    const zendDebug = await determinePhpDebugMode(phpBinary);
-    const ztsMode = await determineZendThreadSafeMode(phpBinary);
-    const extSoFile = `${extName}.so`;
-    const extPackageName = `php_${extName}-${releaseTag}_php${phpMajorMinor}-${arch}-${os}-${libcFlavour}${zendDebug}${ztsMode}.zip`;
-
-    await buildExtension();
-
-    await exec.exec("ls", ["-l", "modules"]);
-
-    await exec.exec(`zip -j ${extPackageName} modules/${extSoFile}`);
-
-    await uploadReleaseAsset(releaseTag, extPackageName);
-
-    core.setOutput("package-path", extPackageName);
-})();
-
-module.exports = __webpack_exports__;
+/******/ 	
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	// This entry module is referenced by other modules so it can't be inlined
+/******/ 	var __webpack_exports__ = __nccwpck_require__(5105);
+/******/ 	module.exports = __webpack_exports__;
+/******/ 	
 /******/ })()
 ;
 //# sourceMappingURL=index.js.map
