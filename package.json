@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "build": "ncc build src/index.js -o dist --source-map --license licenses.txt",
-    "test": "jest"
+    "test": "jest --coverage"
   },
   "keywords": ["github", "actions"],
   "author": "James Titcumb <asgrim@php.net>",
