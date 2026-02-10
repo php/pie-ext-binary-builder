@@ -3,7 +3,7 @@ on:
   push:
 
 env:
-  RELEASE_TAG: 0.0.0-fake+run_${{ github.run_id }}_${{ github.run_attempt }}
+  RELEASE_TAG: 0.0.0-fake+run_${{ github.run_id }}
 
 jobs:
   check-dist-updated:
