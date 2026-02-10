@@ -1,0 +1,114 @@
+name: E2E test with release
+on:
+  push:
+
+env:
+  RELEASE_TAG: 0.0.0-fake+run_${{ github.run_id }}
+
+jobs:
+  create-test-release:
+    runs-on: ubuntu-latest
+    permissions:
+      # contents:write is required to upload to the release assets
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-tags: 'true'
+          ref: ${{ github.ref }}
+
+      - name: Create a fake tag for the build
+        run: |
+          git config --global user.email "Fake User"
+          git config --global user.name "fake-user@example.com"
+          git tag -a -m "test tag for CI build ${{ github.run_id }}" ${{ env.RELEASE_TAG }}
+          git push origin ${{ env.RELEASE_TAG }}
+
+      - name: Create a fake release for the build
+        run: gh release create "${{ env.RELEASE_TAG }}" --title "${{ env.RELEASE_TAG }}" --draft --notes-from-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-action:
+    runs-on: ${{ matrix.operating-system }}
+    needs: [create-test-release]
+    strategy:
+      fail-fast: false
+      matrix:
+        operating-system:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - macos-15-intel
+          - macos-latest
+        php-versions:
+#          - 5.6 @todo test ext doesn't currently build on 5.6
+          - 7.0
+          - 7.1
+          - 7.2
+          - 7.3
+          - 7.4
+          - 8.0
+          - 8.1
+          - 8.2
+          - 8.3
+          - 8.4
+        zts-mode:
+          - ts
+          - nts
+    permissions:
+      # contents:write is required to upload to the release assets
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          repository: asgrim/example-pie-extension
+          path: ext
+
+      - name: Move test ext files
+        run: |
+          mv ext/composer.json .
+          mv ext/config.m4 .
+          mv ext/php_example_pie_extension.h .
+          mv ext/zend_example_pie_extension.c .
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-versions }}
+        env:
+          # debug: ${{ matrix.zend-debug }} @todo may not be able to use https://github.com/shivammathur/setup-php/issues/816
+          phpts: ${{ matrix.zts-mode }}
+
+      - name: Run the action
+        id: pie-ext-binary-builder
+        uses: ./
+        with:
+          configure-flags: '--with-hello-name=FROM_MY_ACTION --enable-example-pie-extension'
+          release-tag: ${{ env.RELEASE_TAG }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check Output
+        run: |
+          echo "Package path: ${{ steps.pie-ext-binary-builder.outputs.package-path }}"
+          ls -l
+
+  delete-test-release:
+    runs-on: ubuntu-latest
+    needs: [test-action]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Delete test release
+        run: |
+          if gh release view "${{ env.RELEASE_TAG }}" > /dev/null 2>&1; then
+            gh release delete "${{ env.RELEASE_TAG }}" --yes --cleanup-tag
+          else
+            echo "Release ${{ env.RELEASE_TAG }} does not exist, skipping deletion."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
