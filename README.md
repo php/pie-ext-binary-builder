@@ -9,7 +9,7 @@ them to your GitHub releases. It will:
  - Upload the archive to your GitHub release
 
 > [!TIP]
-> Looking for Windows support? You probably want [`php/php-windows-builder`](https://github.com/php/php-windows-builder)
+> Looking for Windows support? You probably want [`php/php-windows-builder`](https://github.com/php/php-windows-builder?tab=readme-ov-file#examples)
 
 ## The Action
 
