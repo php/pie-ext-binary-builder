@@ -274,3 +274,56 @@ describe('determineLibcFlavour', () => {
         await expect(action.determineLibcFlavour()).resolves.toBe('glibc');
     });
 });
+
+describe('determinePhpBinary', () => {
+    test('php binary is returned', async () => {
+        exec.getExecOutput.mockResolvedValue({
+            stdout: "/path/to/php\n",
+            exitCode: 0,
+        });
+        await expect(action.determinePhpBinary()).resolves.toBe('/path/to/php');
+    });
+
+    test('php binary being NONE returns just php', async () => {
+        exec.getExecOutput.mockResolvedValue({
+            stdout: "NONE\n",
+            exitCode: 0,
+        });
+        await expect(action.determinePhpBinary()).resolves.toBe('php');
+    });
+});
+
+describe('determinePhpDebugMode', () => {
+    test('debug mode', async () => {
+        exec.getExecOutput.mockResolvedValue({
+            stdout: "-debug\n",
+            exitCode: 0,
+        });
+        await expect(action.determinePhpDebugMode()).resolves.toBe('-debug');
+    });
+    test('non debug mode', async () => {
+        exec.getExecOutput.mockResolvedValue({
+            stdout: "\n",
+            exitCode: 0,
+        });
+        await expect(action.determinePhpDebugMode()).resolves.toBe('');
+    });
+});
+
+describe('determineZendThreadSafeMode', () => {
+    test('zts mode', async () => {
+        exec.getExecOutput.mockResolvedValue({
+            stdout: "-zts\n",
+            exitCode: 0,
+        });
+        await expect(action.determineZendThreadSafeMode()).resolves.toBe('-zts');
+    });
+
+    test('nts mode', async () => {
+        exec.getExecOutput.mockResolvedValue({
+            stdout: "\n",
+            exitCode: 0,
+        });
+        await expect(action.determineZendThreadSafeMode()).resolves.toBe('');
+    });
+});
