@@ -1,9 +1,20 @@
 const exec = require('@actions/exec');
 const fs = require('fs');
+const github = require('@actions/github');
 const action = require('../src/index');
+const core = require('@actions/core');
 
 jest.mock('@actions/core');
 jest.mock('@actions/exec');
+jest.mock('@actions/github', () => ({
+    getOctokit: jest.fn(),
+    context: {
+        repo: {
+            owner: 'the-owner',
+            repo: 'the-repo',
+        },
+    },
+}));
 jest.mock('fs', () => ({
     ...jest.requireActual('fs'),
     existsSync: jest.fn(),
@@ -325,5 +336,86 @@ describe('determineZendThreadSafeMode', () => {
             exitCode: 0,
         });
         await expect(action.determineZendThreadSafeMode()).resolves.toBe('');
+    });
+});
+
+describe('buildExtension', () => {
+    test('builds the extension with configure params', async () => {
+        core.getInput.mockReturnValue('--enable-test --with-foo=/foo/bar');
+
+        await action.buildExtension();
+
+        expect(exec.exec).toHaveBeenCalledWith('phpize');
+        expect(exec.exec).toHaveBeenCalledWith('./configure', ['--enable-test', '--with-foo=/foo/bar']);
+        expect(exec.exec).toHaveBeenCalledWith('make');
+    });
+});
+
+describe('uploadReleaseAsset', () => {
+    let octokit;
+
+    beforeEach(() => {
+        octokit = {
+            rest: {
+                repos: {
+                    listReleases: jest.fn(),
+                    uploadReleaseAsset: jest.fn(),
+                },
+            },
+        };
+        github.getOctokit.mockReturnValue(octokit);
+        core.getInput.mockReturnValue('fake-token');
+    });
+
+    test('successfully uploads asset', async () => {
+        octokit.rest.repos.listReleases.mockResolvedValue({
+            data: [
+                {
+                    id: 123,
+                    tag_name: '1.0.0',
+                    name: 'Release 1.0.0',
+                },
+            ],
+        });
+        fs.readFileSync.mockReturnValue('release-asset-fake-data');
+
+        await action.uploadReleaseAsset('1.0.0', 'release-asset.zip');
+
+        expect(github.getOctokit).toHaveBeenCalledWith('fake-token');
+        expect(octokit.rest.repos.listReleases).toHaveBeenCalledWith({
+            owner: 'the-owner',
+            repo: 'the-repo',
+        });
+        expect(octokit.rest.repos.uploadReleaseAsset).toHaveBeenCalledWith({
+            owner: 'the-owner',
+            repo: 'the-repo',
+            release_id: 123,
+            name: 'release-asset.zip',
+            data: 'release-asset-fake-data',
+        });
+    });
+
+    test('throws error when there are no releases', async () => {
+        octokit.rest.repos.listReleases.mockResolvedValue({data: []});
+
+        await expect(action.uploadReleaseAsset('1.0.0', 'release-asset.zip'))
+            .rejects
+            .toThrow('No release found for tag: 1.0.0');
+    });
+
+    test('throws error when release not found', async () => {
+        octokit.rest.repos.listReleases.mockResolvedValue({
+            data: [
+                {
+                    id: 123,
+                    tag_name: '1.0.0',
+                    name: 'Release 1.0.0',
+                },
+            ],
+        });
+
+        await expect(action.uploadReleaseAsset('1.1.0', 'release-asset.zip'))
+            .rejects
+            .toThrow('No release found for tag: 1.1.0');
     });
 });
