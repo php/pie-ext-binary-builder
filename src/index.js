@@ -175,6 +175,38 @@ async function uploadReleaseAsset(releaseTag, packageFilename) {
     core.info("Asset uploaded successfully!");
 }
 
+async function extensionDetails() {
+    const releaseTag = core.getInput("release-tag");
+    const phpBinary = await module.exports.determinePhpBinary();
+    const extName = await module.exports.determineExtensionNameFromComposerJson();
+    const phpMajorMinor = await module.exports.determinePhpVersionFromPhpConfig();
+    const arch = await module.exports.determineArchitecture();
+    const os = await module.exports.determineOperatingSystem();
+    const libcFlavour = await module.exports.determineLibcFlavour();
+    const zendDebug = await module.exports.determinePhpDebugMode(phpBinary);
+    const ztsMode = await module.exports.determineZendThreadSafeMode(phpBinary);
+
+    return {
+        releaseTag: releaseTag,
+        extSoFile: `${extName}.so`,
+        extPackageName: `php_${extName}-${releaseTag}_php${phpMajorMinor}-${arch}-${os}-${libcFlavour}${zendDebug}${ztsMode}.zip`
+    };
+}
+
+async function main() {
+    const { releaseTag, extSoFile, extPackageName } = await module.exports.extensionDetails();
+
+    await module.exports.buildExtension();
+
+    await exec.exec("ls", ["-l", "modules"]);
+
+    await exec.exec(`zip -j ${extPackageName} modules/${extSoFile}`);
+
+    await module.exports.uploadReleaseAsset(releaseTag, extPackageName);
+
+    core.setOutput("package-path", extPackageName);
+}
+
 module.exports = {
     determineExtensionNameFromComposerJson,
     buildExtension,
@@ -185,31 +217,11 @@ module.exports = {
     determinePhpBinary,
     determinePhpDebugMode,
     determineZendThreadSafeMode,
-    uploadReleaseAsset
+    uploadReleaseAsset,
+    extensionDetails,
+    main,
 };
 
 if (require.main === module) {
-    (async function () {
-        const releaseTag = core.getInput("release-tag");
-        const phpBinary = await determinePhpBinary();
-        const extName = await determineExtensionNameFromComposerJson();
-        const phpMajorMinor = await determinePhpVersionFromPhpConfig();
-        const arch = await determineArchitecture();
-        const os = await determineOperatingSystem();
-        const libcFlavour = await determineLibcFlavour();
-        const zendDebug = await determinePhpDebugMode(phpBinary);
-        const ztsMode = await determineZendThreadSafeMode(phpBinary);
-        const extSoFile = `${extName}.so`;
-        const extPackageName = `php_${extName}-${releaseTag}_php${phpMajorMinor}-${arch}-${os}-${libcFlavour}${zendDebug}${ztsMode}.zip`;
-
-        await buildExtension();
-
-        await exec.exec("ls", ["-l", "modules"]);
-
-        await exec.exec(`zip -j ${extPackageName} modules/${extSoFile}`);
-
-        await uploadReleaseAsset(releaseTag, extPackageName);
-
-        core.setOutput("package-path", extPackageName);
-    })();
+    main();
 }

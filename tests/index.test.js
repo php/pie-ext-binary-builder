@@ -419,3 +419,65 @@ describe('uploadReleaseAsset', () => {
             .toThrow('No release found for tag: 1.1.0');
     });
 });
+
+describe('extensionDetails', () => {
+    test('extension details are returned', async () => {
+        core.getInput.mockReturnValue('1.2.3');
+
+        jest.spyOn(action, 'determinePhpBinary').mockResolvedValue('/usr/bin/php');
+        jest.spyOn(action, 'determineExtensionNameFromComposerJson').mockResolvedValue('foo');
+        jest.spyOn(action, 'determinePhpVersionFromPhpConfig').mockResolvedValue('8.1');
+        jest.spyOn(action, 'determineArchitecture').mockResolvedValue('x86_64');
+        jest.spyOn(action, 'determineOperatingSystem').mockResolvedValue('linux');
+        jest.spyOn(action, 'determineLibcFlavour').mockResolvedValue('glibc');
+        jest.spyOn(action, 'determinePhpDebugMode').mockResolvedValue('');
+        jest.spyOn(action, 'determineZendThreadSafeMode').mockResolvedValue('');
+
+        expect(await action.extensionDetails())
+            .toEqual({
+                releaseTag: '1.2.3',
+                extSoFile: 'foo.so',
+                extPackageName: 'php_foo-1.2.3_php8.1-x86_64-linux-glibc.zip',
+            });
+    });
+
+    test('extension details are returned for debug/zts', async () => {
+        core.getInput.mockReturnValue('1.2.3');
+
+        jest.spyOn(action, 'determinePhpBinary').mockResolvedValue('/usr/bin/php');
+        jest.spyOn(action, 'determineExtensionNameFromComposerJson').mockResolvedValue('foo');
+        jest.spyOn(action, 'determinePhpVersionFromPhpConfig').mockResolvedValue('8.1');
+        jest.spyOn(action, 'determineArchitecture').mockResolvedValue('x86_64');
+        jest.spyOn(action, 'determineOperatingSystem').mockResolvedValue('linux');
+        jest.spyOn(action, 'determineLibcFlavour').mockResolvedValue('glibc');
+        jest.spyOn(action, 'determinePhpDebugMode').mockResolvedValue('-debug');
+        jest.spyOn(action, 'determineZendThreadSafeMode').mockResolvedValue('-zts');
+
+        expect(await action.extensionDetails())
+            .toEqual({
+                releaseTag: '1.2.3',
+                extSoFile: 'foo.so',
+                extPackageName: 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip',
+            });
+    });
+});
+
+describe('main', () => {
+    test('main builds and uploads extension', async () => {
+        jest.spyOn(action, 'extensionDetails').mockResolvedValue({
+            releaseTag: '1.2.3',
+            extSoFile: 'foo.so',
+            extPackageName: 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip',
+        });
+        jest.spyOn(action, 'buildExtension').mockResolvedValue();
+        jest.spyOn(action, 'uploadReleaseAsset').mockResolvedValue();
+        jest.spyOn(exec, 'exec').mockResolvedValue();
+
+        await action.main();
+
+        expect(action.buildExtension).toHaveBeenCalled();
+        expect(action.uploadReleaseAsset).toHaveBeenCalledWith('1.2.3', 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip');
+        expect(exec.exec).toHaveBeenCalledWith('zip -j php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip modules/foo.so');
+        expect(core.setOutput).toHaveBeenCalledWith('package-path', 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip');
+    });
+});
