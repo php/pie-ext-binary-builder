@@ -35,6 +35,7 @@ with:
 | `release-tag`     | The tag to use when building the extension; there must be an existing draft release for the tag | `true`   | -       |
 | `github-token`    | The GitHub token to use. Usually `${{ secrets.GITHUB_TOKEN }}` would be fine for most cases.    | `true`   | -       |
 | `configure-flags` | If you need to pass additional flags to the `./configure` command, specify them here            | `false`  | `''`    |
+| `build-path`      | Path to the extension source directory containing `config.m4`, relative to repo root           | `false`  | `'.'`   |
 
 ### Outputs
 

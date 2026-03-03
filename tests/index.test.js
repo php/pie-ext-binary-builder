@@ -340,14 +340,32 @@ describe('determineZendThreadSafeMode', () => {
 });
 
 describe('buildExtension', () => {
-    test('builds the extension with configure params', async () => {
-        core.getInput.mockReturnValue('--enable-test --with-foo=/foo/bar');
+    test('builds the extension with configure params and default build path', async () => {
+        core.getInput.mockImplementation((name) => {
+            if (name === 'configure-flags') return '--enable-test --with-foo=/foo/bar';
+            if (name === 'build-path') return '.';
+            return '';
+        });
 
         await action.buildExtension();
 
-        expect(exec.exec).toHaveBeenCalledWith('phpize');
-        expect(exec.exec).toHaveBeenCalledWith('./configure', ['--enable-test', '--with-foo=/foo/bar']);
-        expect(exec.exec).toHaveBeenCalledWith('make');
+        expect(exec.exec).toHaveBeenCalledWith('phpize', [], {});
+        expect(exec.exec).toHaveBeenCalledWith('./configure', ['--enable-test', '--with-foo=/foo/bar'], {});
+        expect(exec.exec).toHaveBeenCalledWith('make', [], {});
+    });
+
+    test('builds the extension with custom build path', async () => {
+        core.getInput.mockImplementation((name) => {
+            if (name === 'configure-flags') return '--enable-test';
+            if (name === 'build-path') return 'some/ext/path';
+            return '';
+        });
+
+        await action.buildExtension();
+
+        expect(exec.exec).toHaveBeenCalledWith('phpize', [], { cwd: 'some/ext/path' });
+        expect(exec.exec).toHaveBeenCalledWith('./configure', ['--enable-test'], { cwd: 'some/ext/path' });
+        expect(exec.exec).toHaveBeenCalledWith('make', [], { cwd: 'some/ext/path' });
     });
 });
 
@@ -463,7 +481,7 @@ describe('extensionDetails', () => {
 });
 
 describe('main', () => {
-    test('main builds and uploads extension', async () => {
+    test('main builds and uploads extension with default build path', async () => {
         jest.spyOn(action, 'extensionDetails').mockResolvedValue({
             releaseTag: '1.2.3',
             extSoFile: 'foo.so',
@@ -472,12 +490,40 @@ describe('main', () => {
         jest.spyOn(action, 'buildExtension').mockResolvedValue();
         jest.spyOn(action, 'uploadReleaseAsset').mockResolvedValue();
         jest.spyOn(exec, 'exec').mockResolvedValue();
+        core.getInput.mockImplementation((name) => {
+            if (name === 'build-path') return '.';
+            return '';
+        });
 
         await action.main();
 
         expect(action.buildExtension).toHaveBeenCalled();
         expect(action.uploadReleaseAsset).toHaveBeenCalledWith('1.2.3', 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip');
-        expect(exec.exec).toHaveBeenCalledWith('zip -j php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip modules/foo.so');
+        expect(exec.exec).toHaveBeenCalledWith('ls', ['-l', 'modules']);
+        expect(exec.exec).toHaveBeenCalledWith('zip', ['-j', 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip', 'modules/foo.so']);
+        expect(core.setOutput).toHaveBeenCalledWith('package-path', 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip');
+    });
+
+    test('main builds and uploads extension with custom build path', async () => {
+        jest.spyOn(action, 'extensionDetails').mockResolvedValue({
+            releaseTag: '1.2.3',
+            extSoFile: 'foo.so',
+            extPackageName: 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip',
+        });
+        jest.spyOn(action, 'buildExtension').mockResolvedValue();
+        jest.spyOn(action, 'uploadReleaseAsset').mockResolvedValue();
+        jest.spyOn(exec, 'exec').mockResolvedValue();
+        core.getInput.mockImplementation((name) => {
+            if (name === 'build-path') return 'src/php/ext/grpc';
+            return '';
+        });
+
+        await action.main();
+
+        expect(action.buildExtension).toHaveBeenCalled();
+        expect(action.uploadReleaseAsset).toHaveBeenCalledWith('1.2.3', 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip');
+        expect(exec.exec).toHaveBeenCalledWith('ls', ['-l', 'src/php/ext/grpc/modules']);
+        expect(exec.exec).toHaveBeenCalledWith('zip', ['-j', 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip', 'src/php/ext/grpc/modules/foo.so']);
         expect(core.setOutput).toHaveBeenCalledWith('package-path', 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip');
     });
 });
