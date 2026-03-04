@@ -360,6 +360,7 @@ describe('uploadReleaseAsset', () => {
                 repos: {
                     listReleases: jest.fn(),
                     uploadReleaseAsset: jest.fn(),
+                    deleteReleaseAsset: jest.fn(),
                 },
             },
         };
@@ -374,6 +375,7 @@ describe('uploadReleaseAsset', () => {
                     id: 123,
                     tag_name: '1.0.0',
                     name: 'Release 1.0.0',
+                    assets: [],
                 },
             ],
         });
@@ -393,6 +395,52 @@ describe('uploadReleaseAsset', () => {
             name: 'release-asset.zip',
             data: 'release-asset-fake-data',
         });
+    });
+
+    test('deletes existing asset before uploading', async () => {
+        octokit.rest.repos.listReleases.mockResolvedValue({
+            data: [
+                {
+                    id: 123,
+                    tag_name: '1.0.0',
+                    name: 'Release 1.0.0',
+                    assets: [
+                        { id: 456, name: 'release-asset.zip' },
+                    ],
+                },
+            ],
+        });
+        fs.readFileSync.mockReturnValue('release-asset-fake-data');
+
+        await action.uploadReleaseAsset('1.0.0', 'release-asset.zip');
+
+        expect(octokit.rest.repos.deleteReleaseAsset).toHaveBeenCalledWith({
+            owner: 'the-owner',
+            repo: 'the-repo',
+            asset_id: 456,
+        });
+        expect(octokit.rest.repos.uploadReleaseAsset).toHaveBeenCalled();
+    });
+
+    test('does not delete when no matching asset exists', async () => {
+        octokit.rest.repos.listReleases.mockResolvedValue({
+            data: [
+                {
+                    id: 123,
+                    tag_name: '1.0.0',
+                    name: 'Release 1.0.0',
+                    assets: [
+                        { id: 789, name: 'other-asset.zip' },
+                    ],
+                },
+            ],
+        });
+        fs.readFileSync.mockReturnValue('release-asset-fake-data');
+
+        await action.uploadReleaseAsset('1.0.0', 'release-asset.zip');
+
+        expect(octokit.rest.repos.deleteReleaseAsset).not.toHaveBeenCalled();
+        expect(octokit.rest.repos.uploadReleaseAsset).toHaveBeenCalled();
     });
 
     test('throws error when there are no releases', async () => {

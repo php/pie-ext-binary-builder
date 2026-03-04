@@ -164,6 +164,17 @@ async function uploadReleaseAsset(releaseTag, packageFilename) {
     }
 
     core.info(`Found release ${release.name || release.tag_name} (ID: ${release.id})`);
+
+    const existingAsset = (release.assets || []).find(a => a.name === packageFilename);
+    if (existingAsset) {
+        core.info("Asset already exists, replacing...");
+        await octokit.rest.repos.deleteReleaseAsset({
+            owner,
+            repo,
+            asset_id: existingAsset.id,
+        });
+    }
+
     await octokit.rest.repos.uploadReleaseAsset({
         owner,
         repo,
