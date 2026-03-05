@@ -30261,10 +30261,12 @@ async function determineExtensionNameFromComposerJson() {
 async function buildExtension() {
     core.info("Building the extension...");
     const configureFlags = core.getInput("configure-flags").split(' ');
+    const buildPath = core.getInput("build-path") || ".";
+    const opts = buildPath !== "." ? { cwd: buildPath } : {};
 
-    await exec.exec("phpize");
-    await exec.exec("./configure", configureFlags);
-    await exec.exec("make");
+    await exec.exec("phpize", [], opts);
+    await exec.exec("./configure", configureFlags, opts);
+    await exec.exec("make", [], opts);
 }
 
 async function determinePhpVersionFromPhpConfig() {
@@ -30406,9 +30408,11 @@ async function main() {
 
     await module.exports.buildExtension();
 
-    await exec.exec("ls", ["-l", "modules"]);
+    const buildPath = core.getInput("build-path") || ".";
+    const modulesDir = path.join(buildPath, "modules");
+    await exec.exec("ls", ["-l", modulesDir]);
 
-    await exec.exec(`zip -j ${extPackageName} modules/${extSoFile}`);
+    await exec.exec("zip", ["-j", extPackageName, path.join(modulesDir, extSoFile)]);
 
     await module.exports.uploadReleaseAsset(releaseTag, extPackageName);
 

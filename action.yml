@@ -5,6 +5,10 @@ inputs:
     description: 'Flags to pass to ./configure'
     required: false
     default: ''
+  build-path:
+    description: 'Path to the extension source directory containing config.m4 (relative to repo root)'
+    required: false
+    default: '.'
   release-tag:
     description: 'The tag to use for the release'
     required: true
