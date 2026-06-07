@@ -2,20 +2,23 @@
   "name": "pie-pre-packaged-binary-action",
   "version": "1.0.0",
   "description": "Build and upload a PIE extension pre-packaged binary with the expected naming conventions",
+  "type": "module",
   "main": "src/index.js",
   "scripts": {
     "build": "ncc build src/index.js -o dist --source-map --license licenses.txt",
-    "test": "jest --coverage"
+    "test": "vitest run --coverage"
   },
   "keywords": ["github", "actions"],
   "author": "James Titcumb <asgrim@php.net>",
   "license": "BSD-3-Clause",
   "dependencies": {
-    "@actions/core": "^2.0.2",
-    "@actions/github": "^7.0.0"
+    "@actions/core": "^3.0.1",
+    "@actions/exec": "^3.0.0",
+    "@actions/github": "^9.1.1"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.8",
     "@vercel/ncc": "^0.38.4",
-    "jest": "^29.7.0"
+    "vitest": "^4.1.8"
   }
 }

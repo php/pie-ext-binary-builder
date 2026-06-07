@@ -19,5 +19,5 @@ outputs:
   package-path:
     description: 'Path to the generated .zip package'
 runs:
-  using: 'node20'
+  using: 'node24'
   main: dist/index.js
