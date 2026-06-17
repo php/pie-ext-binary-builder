@@ -1,25 +1,41 @@
-const exec = require('@actions/exec');
-const fs = require('fs');
-const github = require('@actions/github');
-const action = require('../src/index');
-const core = require('@actions/core');
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-jest.mock('@actions/core');
-jest.mock('@actions/exec');
-jest.mock('@actions/github', () => ({
-    getOctokit: jest.fn(),
-    context: {
-        repo: {
-            owner: 'the-owner',
-            repo: 'the-repo',
+const mocks = vi.hoisted(() => ({
+    exec: {
+        exec: vi.fn(),
+        getExecOutput: vi.fn(),
+    },
+    fs: {
+        existsSync: vi.fn(),
+        readFileSync: vi.fn(),
+    },
+    github: {
+        getOctokit: vi.fn(),
+        context: {
+            repo: {
+                owner: 'the-owner',
+                repo: 'the-repo',
+            },
         },
     },
+    core: {
+        getInput: vi.fn(),
+        info: vi.fn(),
+        setOutput: vi.fn(),
+        warning: vi.fn(),
+    },
 }));
-jest.mock('fs', () => ({
-    ...jest.requireActual('fs'),
-    existsSync: jest.fn(),
-    readFileSync: jest.fn(),
+
+vi.mock('@actions/core', () => mocks.core);
+vi.mock('@actions/exec', () => mocks.exec);
+vi.mock('@actions/github', () => mocks.github);
+vi.mock('fs', () => ({
+    default: mocks.fs,
+    ...mocks.fs,
 }));
+
+const { core, exec, fs, github } = mocks;
+const action = (await import('../src/index.js')).default;
 
 describe('determinePhpVersionFromPhpConfig', () => {
     test('php version can be determined from php-config', async () => {
@@ -376,8 +392,8 @@ describe('uploadReleaseAsset', () => {
         octokit = {
             rest: {
                 repos: {
-                    listReleases: jest.fn(),
-                    uploadReleaseAsset: jest.fn(),
+                    listReleases: vi.fn(),
+                    uploadReleaseAsset: vi.fn(),
                 },
             },
         };
@@ -442,14 +458,14 @@ describe('extensionDetails', () => {
     test('extension details are returned', async () => {
         core.getInput.mockReturnValue('1.2.3');
 
-        jest.spyOn(action, 'determinePhpBinary').mockResolvedValue('/usr/bin/php');
-        jest.spyOn(action, 'determineExtensionNameFromComposerJson').mockResolvedValue('foo');
-        jest.spyOn(action, 'determinePhpVersionFromPhpConfig').mockResolvedValue('8.1');
-        jest.spyOn(action, 'determineArchitecture').mockResolvedValue('x86_64');
-        jest.spyOn(action, 'determineOperatingSystem').mockResolvedValue('linux');
-        jest.spyOn(action, 'determineLibcFlavour').mockResolvedValue('glibc');
-        jest.spyOn(action, 'determinePhpDebugMode').mockResolvedValue('');
-        jest.spyOn(action, 'determineZendThreadSafeMode').mockResolvedValue('');
+        vi.spyOn(action, 'determinePhpBinary').mockResolvedValue('/usr/bin/php');
+        vi.spyOn(action, 'determineExtensionNameFromComposerJson').mockResolvedValue('foo');
+        vi.spyOn(action, 'determinePhpVersionFromPhpConfig').mockResolvedValue('8.1');
+        vi.spyOn(action, 'determineArchitecture').mockResolvedValue('x86_64');
+        vi.spyOn(action, 'determineOperatingSystem').mockResolvedValue('linux');
+        vi.spyOn(action, 'determineLibcFlavour').mockResolvedValue('glibc');
+        vi.spyOn(action, 'determinePhpDebugMode').mockResolvedValue('');
+        vi.spyOn(action, 'determineZendThreadSafeMode').mockResolvedValue('');
 
         expect(await action.extensionDetails())
             .toEqual({
@@ -462,14 +478,14 @@ describe('extensionDetails', () => {
     test('extension details are returned for debug/zts', async () => {
         core.getInput.mockReturnValue('1.2.3');
 
-        jest.spyOn(action, 'determinePhpBinary').mockResolvedValue('/usr/bin/php');
-        jest.spyOn(action, 'determineExtensionNameFromComposerJson').mockResolvedValue('foo');
-        jest.spyOn(action, 'determinePhpVersionFromPhpConfig').mockResolvedValue('8.1');
-        jest.spyOn(action, 'determineArchitecture').mockResolvedValue('x86_64');
-        jest.spyOn(action, 'determineOperatingSystem').mockResolvedValue('linux');
-        jest.spyOn(action, 'determineLibcFlavour').mockResolvedValue('glibc');
-        jest.spyOn(action, 'determinePhpDebugMode').mockResolvedValue('-debug');
-        jest.spyOn(action, 'determineZendThreadSafeMode').mockResolvedValue('-zts');
+        vi.spyOn(action, 'determinePhpBinary').mockResolvedValue('/usr/bin/php');
+        vi.spyOn(action, 'determineExtensionNameFromComposerJson').mockResolvedValue('foo');
+        vi.spyOn(action, 'determinePhpVersionFromPhpConfig').mockResolvedValue('8.1');
+        vi.spyOn(action, 'determineArchitecture').mockResolvedValue('x86_64');
+        vi.spyOn(action, 'determineOperatingSystem').mockResolvedValue('linux');
+        vi.spyOn(action, 'determineLibcFlavour').mockResolvedValue('glibc');
+        vi.spyOn(action, 'determinePhpDebugMode').mockResolvedValue('-debug');
+        vi.spyOn(action, 'determineZendThreadSafeMode').mockResolvedValue('-zts');
 
         expect(await action.extensionDetails())
             .toEqual({
@@ -482,14 +498,14 @@ describe('extensionDetails', () => {
 
 describe('main', () => {
     test('main builds and uploads extension with default build path', async () => {
-        jest.spyOn(action, 'extensionDetails').mockResolvedValue({
+        vi.spyOn(action, 'extensionDetails').mockResolvedValue({
             releaseTag: '1.2.3',
             extSoFile: 'foo.so',
             extPackageName: 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip',
         });
-        jest.spyOn(action, 'buildExtension').mockResolvedValue();
-        jest.spyOn(action, 'uploadReleaseAsset').mockResolvedValue();
-        jest.spyOn(exec, 'exec').mockResolvedValue();
+        vi.spyOn(action, 'buildExtension').mockResolvedValue();
+        vi.spyOn(action, 'uploadReleaseAsset').mockResolvedValue();
+        vi.spyOn(exec, 'exec').mockResolvedValue();
         core.getInput.mockImplementation((name) => {
             if (name === 'build-path') return '.';
             return '';
@@ -505,14 +521,14 @@ describe('main', () => {
     });
 
     test('main builds and uploads extension with custom build path', async () => {
-        jest.spyOn(action, 'extensionDetails').mockResolvedValue({
+        vi.spyOn(action, 'extensionDetails').mockResolvedValue({
             releaseTag: '1.2.3',
             extSoFile: 'foo.so',
             extPackageName: 'php_foo-1.2.3_php8.1-x86_64-linux-glibc-debug-zts.zip',
         });
-        jest.spyOn(action, 'buildExtension').mockResolvedValue();
-        jest.spyOn(action, 'uploadReleaseAsset').mockResolvedValue();
-        jest.spyOn(exec, 'exec').mockResolvedValue();
+        vi.spyOn(action, 'buildExtension').mockResolvedValue();
+        vi.spyOn(action, 'uploadReleaseAsset').mockResolvedValue();
+        vi.spyOn(exec, 'exec').mockResolvedValue();
         core.getInput.mockImplementation((name) => {
             if (name === 'build-path') return 'src/php/ext/grpc';
             return '';

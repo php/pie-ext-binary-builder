@@ -1,8 +1,9 @@
-const core = require("@actions/core");
-const exec = require("@actions/exec");
-const github = require("@actions/github");
-const fs = require("fs");
-const path = require("path");
+import * as core from "@actions/core";
+import * as exec from "@actions/exec";
+import * as github from "@actions/github";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 async function determineExtensionNameFromComposerJson() {
     core.info("Detecting extension name from composer.json...");
@@ -179,14 +180,14 @@ async function uploadReleaseAsset(releaseTag, packageFilename) {
 
 async function extensionDetails() {
     const releaseTag = core.getInput("release-tag");
-    const phpBinary = await module.exports.determinePhpBinary();
-    const extName = await module.exports.determineExtensionNameFromComposerJson();
-    const phpMajorMinor = await module.exports.determinePhpVersionFromPhpConfig();
-    const arch = await module.exports.determineArchitecture();
-    const os = await module.exports.determineOperatingSystem();
-    const libcFlavour = await module.exports.determineLibcFlavour();
-    const zendDebug = await module.exports.determinePhpDebugMode(phpBinary);
-    const ztsMode = await module.exports.determineZendThreadSafeMode(phpBinary);
+    const phpBinary = await action.determinePhpBinary();
+    const extName = await action.determineExtensionNameFromComposerJson();
+    const phpMajorMinor = await action.determinePhpVersionFromPhpConfig();
+    const arch = await action.determineArchitecture();
+    const os = await action.determineOperatingSystem();
+    const libcFlavour = await action.determineLibcFlavour();
+    const zendDebug = await action.determinePhpDebugMode(phpBinary);
+    const ztsMode = await action.determineZendThreadSafeMode(phpBinary);
 
     return {
         releaseTag: releaseTag,
@@ -196,9 +197,9 @@ async function extensionDetails() {
 }
 
 async function main() {
-    const { releaseTag, extSoFile, extPackageName } = await module.exports.extensionDetails();
+    const { releaseTag, extSoFile, extPackageName } = await action.extensionDetails();
 
-    await module.exports.buildExtension();
+    await action.buildExtension();
 
     const buildPath = core.getInput("build-path") || ".";
     const modulesDir = path.join(buildPath, "modules");
@@ -206,12 +207,12 @@ async function main() {
 
     await exec.exec("zip", ["-j", extPackageName, path.join(modulesDir, extSoFile)]);
 
-    await module.exports.uploadReleaseAsset(releaseTag, extPackageName);
+    await action.uploadReleaseAsset(releaseTag, extPackageName);
 
     core.setOutput("package-path", extPackageName);
 }
 
-module.exports = {
+const action = {
     determineExtensionNameFromComposerJson,
     buildExtension,
     determinePhpVersionFromPhpConfig,
@@ -226,6 +227,22 @@ module.exports = {
     main,
 };
 
-if (require.main === module) {
-    main();
+export {
+    determineExtensionNameFromComposerJson,
+    buildExtension,
+    determinePhpVersionFromPhpConfig,
+    determineArchitecture,
+    determineOperatingSystem,
+    determineLibcFlavour,
+    determinePhpBinary,
+    determinePhpDebugMode,
+    determineZendThreadSafeMode,
+    uploadReleaseAsset,
+    extensionDetails,
+    main,
+};
+export default action;
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    action.main();
 }
